@@ -1,0 +1,8 @@
+---
+
+ - name: Deploy Laravel Application
+   hosts: webservers
+   become: yes
+   tasks:
+     - name: Updating the repo
+       apt: update_cache=yes

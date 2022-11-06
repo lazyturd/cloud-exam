@@ -1,0 +1,324 @@
+---
+ - name: Deploy Laravel Application
+   hosts: webservers
+   become: yes
+   become_user: root
+   vars:
+       mysql_pass: 12345
+       http_host: "ayomide.shop"
+       http_conf: "laravel.conf"
+       http_port: "80"
+       disable_default: true
+   tasks:
+     #Installations
+     - name: Install Apache
+       apt: name=apache2 update_cache=yes state=present
+
+     - name: Install Git
+       apt: name=git update_cache=yes state=present
+
+     - name: software-properties-common
+       apt: name=software-properties-common update_cache=yes state=present
+
+     - name: install ca-certificate
+       command: apt install ca-certificates
+     
+     - name: Repo PHP 8.1
+       apt_repository:
+          repo: ppa:ondrej/php
+          update_cache: yes
+          state: present
+
+     - name: Updating the repo
+       apt: update_cache=yes
+
+     - name: Installation PHP 8.1
+       apt: name=php8.1 state=present
+
+     - name: php
+       shell: "apt install libapache2-mod-php php8.1-common php8.1-mysql php8.1-xml php8.1-xmlrpc php8.1-curl php8.1-gd php8.1-imagick php8.1-cli php8.1-dev php8.1-imap php8.1-mbstring php8.1-opcache php8.1-soap php8.1-zip php8.1-redis php8.1-intl -y"
+     
+     #Configure UFW
+     - name: enable ufw
+       ufw: 
+          state: enabled
+
+     - name: enable ssh
+       ufw:
+          rule: allow
+          port: ssh
+          proto: tcp
+
+     - name: allow http
+       ufw:
+          rule: allow
+          port: "80"
+          proto: tcp
+
+     - name: allow https
+       ufw:
+          rule: allow
+          port: "443"
+          proto: tcp
+
+     - name: allow mysql
+       ufw:
+          rule: allow
+          port: "3306"
+          proto: tcp
+
+       #Install and set up mysql
+     - name: Installing Mysql and dependencies
+       package:
+         name: "{{item}}"
+         state: present
+         update_cache: yes
+       loop:
+         - mysql-server
+         - mysql-client 
+         - python3-mysqldb
+         - libmysqlclient-dev
+       become: yes
+
+     - name: start up the mysql service
+       shell: "service mysql start"
+
+     - name: Make sure mysql service is running
+       service:
+           name: mysql
+           state: started
+           enabled: True
+
+     - name: Change the authentication plugin of mysql root user to mysql_native_password
+       shell: mysql -u root -e 'UPDATE mysql.user SET plugin="mysql_native_password" WHERE user="root" AND host="localhost"'
+
+     - name: Flush Privileges
+       shell: mysql -u root -e 'FLUSH PRIVILEGES'
+
+     - name: Set MySQL root password
+       mysql_user: 
+           login_host: 'localhost'
+           login_user: 'root'
+           login_password: ''
+           name: 'root'
+           password: "{{ mysql_pass }}"
+           state: present
+
+     - name: create a new database
+       mysql_db: name=examdb state=present login_user=root login_password="{{ mysql_pass }}"
+
+     #Install Composer
+
+     - name: install composer
+       shell: "curl -sS https://getcomposer.org/installer | php"
+
+     - name: composer part 2
+       shell: "mv composer.phar /usr/local/bin/composer"
+
+     - name: Changing permission of composer file 
+       file: dest=/usr/local/bin/composer mode=a+x
+
+     #Clone laravel repository and set up
+
+     - name: Clone a github repository
+       git:
+         repo: 'https://github.com/f1amy/laravel-realworld-example-app.git'
+         dest: laravel-realworld-example-app/
+         clone: yes
+         update: yes
+
+     - name: Rename laravel-app
+       shell: "mv laravel-realworld-example-app myapp"
+
+     - name: allow composer
+       shell: "composer install --no-interaction"
+       args:
+          chdir: "/root/myapp"
+
+     - name: change directory to the home directory
+       shell: "cd ~"
+
+     - name: move myapp to /var/www/html
+       shell: "mv myapp /var/www/html"
+
+     - name: Recursively change ownership of a directory
+       ansible.builtin.file:
+          path: /var/www/html/myapp
+          state: directory
+          recurse: yes
+          owner: www-data
+          group: www-data
+
+     - name: change modification
+       file: dest=/var/www/html/myapp/storage owner=www-data group=www-data mode=0775 recurse=yes
+
+     - name: php artisan
+       shell: php artisan
+       args:
+          chdir: "/var/www/html/myapp"
+
+     - name: move to env file
+       become_user: root
+       command: mv /var/www/html/myapp/.env.example /var/www/html/myapp/.env
+
+     #Edit the .env file
+     - name: Validate if a String or line is present in the file
+       become_user: root
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: 'APP_NAME="Laravel Realworld Example App"' 
+          # The String to Replace
+          line: 'APP_NAME="myapp"'
+          state: present
+          backup: yes
+
+
+     - name: Validate if a String or line is present in the file
+       become_user: root
+       tags: example1
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: "APP_URL=http://localhost"
+          # The String to Replace
+          line: "APP_URL=http://{{ http_host }}"
+          state: present
+          backup: yes
+
+     - name: Validate if a String or line is present in the file
+       become_user: root
+       tags: example1
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: "DB_CONNECTION=pgsql"
+          # The String to Replace
+          line: "DB_CONNECTION=mysql"
+          state: present
+          backup: yes
+
+     - name: Validate if a String or line is present in the file
+       become_user: root
+       tags: example1
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: "DB_HOST=178.62.47.193"
+          # The String to Replace
+          line: "DB_HOST=localhost"
+          state: present
+          backup: yes
+
+     - name: Validate if a String or line is present in the file
+       become_user: root
+       tags: example1
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: "DB_PORT=5432"
+          # The String to Replace
+          line: "DB_PORT=3306"
+          state: present
+          backup: yes
+
+     - name: Validate if a String or line is present in the file
+       become_user: root
+       tags: example1
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: "DB_DATABASE=laravel-realworld"
+          # The String to Replace
+          line: "DB_DATABASE=examdb"
+          state: present
+          backup: yes
+
+     - name: Validate if a String or line is present in the file        
+       become_user: root
+       tags: example1
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: "DB_USERNAME=sail"
+          # The String to Replace
+          line: "DB_USERNAME=root"
+          state: present
+          backup: yes
+
+     - name: Validate if a String or line is present in the file
+       become_user: root
+       tags: example1
+       lineinfile:
+          path: /var/www/html/myapp/.env
+          # The String to Search
+          regexp: "DB_PASSWORD=password"
+          # The String to Replace
+          line: "DB_PASSWORD='12345'"
+          state: present
+          backup: yes
+
+     - name: php artisan
+       shell: "php artisan key:generate"
+       args:
+          chdir: "/var/www/html/myapp"
+
+     - name: Insert a line at the end of a file.
+       lineinfile:
+        path: /var/www/html/myapp/routes/web.php
+        line: Route::get('/', function () {return view('welcome'); });
+
+      #Configure Apache file
+      - name: Create Document Root
+       file:
+         path: "/var/www/html/myapp/public"
+         state: directory
+         owner: "www-data"
+         mode: 0755
+
+     - name: Creating an empty file
+       file:
+         path: "/etc/apache2/sites-available/{{ http_conf }}"
+         state: touch
+
+     - name: Setup vhost
+       template: 
+          src: "files/apache.conf.j2"
+          dest: "/etc/apache2/sites-available/{{ http_conf }}"
+
+     - name: Reload Apache
+       shell: systemctl reload apache2
+
+     - name: s
+       command: a2dissite 000-default.conf
+       args:
+         chdir: /etc/apache2/sites-available
+
+     - name: ss
+       command: a2ensite laravel.conf
+       args:
+         chdir: /etc/apache2/sites-available
+  
+     - name: sss
+       command: a2enmod rewrite
+       args:
+         chdir: /etc/apache2/sites-available
+
+     - name: migrate
+       command: php artisan migrate
+       args: 
+         chdir: /var/www/html/myapp
+
+     - name: migrate
+       command: php artisan migrate --seed
+       args:
+         chdir: /var/www/html/myapp
+
+     - name: ssss
+       command: systemctl reload apache2
+
+     #Install and Set Up Postgresql
+     - name: Run a script 
+       script:
+         cmd: /home/vagrant/ansible/laravel-setup/files/psql.sh
+

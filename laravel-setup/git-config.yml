@@ -1,0 +1,24 @@
+---
+  - name: Set up Git username and email
+    hosts: webservers
+    become: yes
+    vars_prompt: 
+     - name: Username
+       prompt: enter your username to setup git user account
+       private: no
+
+     - name: Email
+       prompt: enter your email address to setup git user account
+       private: no
+    tasks: 
+       - name: setup git name
+         git_config:
+            name: user.name
+            scope: global
+            value: "{{ Username }}"
+
+       - name: setup git email
+         git_config:
+            name: user.email
+            scope: global
+            value: "{{ Email }}"
